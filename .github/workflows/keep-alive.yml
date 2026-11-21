@@ -19,3 +19,5 @@ jobs:
         run: |
           curl --fail --silent --show-error --max-time 30 \
             https://discord-ticket-bot-v2-3uzx.onrender.com/
+
+# تفعيل الجدولة بعد تحديث التوكن
