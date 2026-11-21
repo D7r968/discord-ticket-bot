@@ -36,12 +36,36 @@
 - **إيقاف التشغيل التلقائي المحلي**: حُذفت مهمة `Discord Ticket Bot` من Task Scheduler وquery killed للعملية المحلية — البوت الآن نسخة واحدة بس (السحابة).
 
 ### ✅ البينغ كل ٥ دقائق (مفعّل الآن)
-الخطة المجانية في Render ترقد بعد ١٥ دقيقة بدون زيارة. الملف `.github/workflows/keep-alive.yml` **مرفوع ومفعّل** في GitHub Actions (الاسم: `Keep bot awake`)، ويرسل طلب GET كل ٥ دقائق للرابط أعلاه. تم تجربة تشغيله يدوياً ونجح ✅.
+الخطة المجانية في Render ترقد بعد ١٥ دقيقة بدون زيارة. استخدمنا طبقتين:
+1. **self-ping داخل البوت**: متغير `SELF_PING_URL` عند Render، والبوت يطلب الرابط نفسه كل ٥ دقائق طالما Processes شغال.
+2. **GitHub Actions**: `.github/workflows/keep-alive.yml` (الاسم `Keep bot awake`) — جدولة احتياطية (قد تتأخر أحياناً).
+
+> جدولة GitHub Actions best-effort وتتأخر أحياناً، فالـ self-ping هو الضمان الأساسي.
 
 فحص الحالة اليدوي:
 ```powershell
 Invoke-RestMethod https://discord-ticket-bot-v2-3uzx.onrender.com/
 ```
+
+---
+
+## 🛡️ بوت الحماية الثاني (Abuabdulaziz Security)
+
+منشور كمان على Render (مجاني، Virginia) وشغال 24/7 بنفس الطريقة:
+
+| العنصر | القيمة |
+|---|---|
+| الرابط | https://abuabdulaziz-security-bot.onrender.com |
+| المستودع | https://github.com/D7r968/abuabdulaziz-security-bot |
+| Service ID | `srv-dc0rc0avcj2c73bhkucg` |
+| البوت | `Abuabdulaziz Security#9606` |
+| التوكن | في متغير البيئة `DISCORD_TOKEN` فقط — **مو مرفوع فيRepo** |
+| الحماية من الرقود | `SELF_PING_URL` + GitHub Actions `Keep security bot awake` |
+
+ملاحظات:
+- `config.json` في الريبو فيه `token: ""` عمداً — التوكن الحقيقي موجود بس في Render.
+- `database.json` (النسخ الاحتياطي/الوايت ليست) ما انرفع، وملف على Render يتعادة إنشاؤه — يعني البيانات المحلية القديمة ما انتقلت.
+- `ownerId` / `guildId` / `logChannelId` في `config.json` فاضية؛ إذا تبي أوامر المالك/اللوق تشتغل، قولي الآي_ديات وأضيفها كمتغيرات.
 
 ---
 
