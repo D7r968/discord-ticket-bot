@@ -13,6 +13,25 @@ const { describeBanner } = require('./banner');
 
 const token = String(process.env.DISCORD_TOKEN || '').trim();
 
+// حالة التسجيل عشان نعرف من الـ health لو اللوجات ما ظهرت
+let loginStatus = 'starting';
+let loginDetail = '';
+let egressStatus = 'untested';
+
+// فحص سريع للاتصال الخارجي (يساعد في تشخيص الاستضافات)
+(async () => {
+  try {
+    const res = await fetch('https://discord.com/api/v10/gateway', {
+      signal: AbortSignal.timeout(10000)
+    });
+    egressStatus = `http_${res.status}`;
+    console.log(`[i] اتصال discord.com: ${egressStatus}`);
+  } catch (err) {
+    egressStatus = `failed: ${err.message}`;
+    console.error(`[!] اتصال discord.com فشل: ${err.message}`);
+  }
+})();
+
 const TOKEN_PLACEHOLDERS = ['', 'ضع_التوكن_هنا', 'YOUR_TOKEN', 'TOKEN'];
 
 if (TOKEN_PLACEHOLDERS.includes(token)) {
@@ -95,6 +114,9 @@ if (process.env.PORT) {
         JSON.stringify({
           status: 'ok',
           bot: client.user?.tag || 'starting',
+          login: loginStatus,
+          loginDetail,
+          egress: egressStatus,
           uptimeSeconds: Math.floor(process.uptime())
         })
       );
@@ -114,4 +136,28 @@ client.on(Events.Warn, (msg) => console.warn('[!] تحذير:', msg));
 process.on('unhandledRejection', (err) => console.error('[!] unhandledRejection:', err));
 process.on('uncaughtException', (err) => console.error('[!] uncaughtException:', err));
 
-client.login(token);
+loginStatus = 'logging_in';
+console.log('[i] جاري تسجيل الدخول إلى Discord...');
+
+client
+  .login(token)
+  .then(() => {
+    loginStatus = 'logged_in';
+    console.log('[✓] تم استلام وعد تسجيل الدخول بنجاح');
+  })
+  .catch((err) => {
+    loginStatus = 'failed';
+    loginDetail = String(err?.message || err);
+    console.error('[!] فشل تسجيل الدخول:', err);
+  });
+
+// إذا ما أكتمل الدخول خلال 45 ثانية، نطبع سبب محتمل عشان التشخيص
+setTimeout(() => {
+  if (loginStatus !== 'logged_in') {
+    console.error(`[!] الدخول ما اكتمل بعد 45 ثانية — الحالة: ${loginStatus} ${loginDetail}`);
+    if (loginStatus === 'logging_in') {
+      loginStatus = 'timeout';
+      loginDetail = 'client.login did not settle within 45s';
+    }
+  }
+}, 45000).unref();
