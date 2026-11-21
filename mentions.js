@@ -6,10 +6,11 @@ const config = require('./config');
 /* منشن أول = تحذير، منشن ثاني = تايم أوت */
 const records = new Map();
 
-const WINDOW_HOURS = Math.max(1, Number(config.mentionWarnHours) || 24);
-const WINDOW_MS = WINDOW_HOURS * 60 * 60 * 1000;
-const TIMEOUT_HOURS = Math.max(1, Number(config.mentionTimeoutHours) || 3);
-const TIMEOUT_MS = TIMEOUT_HOURS * 60 * 60 * 1000;
+// تُقرأ من config عند كل استخدام عشان تتحدث فوراً من لوحة التحكم
+function windowHours() { return Math.max(1, Number(config.mentionWarnHours) || 24); }
+function windowMs() { return windowHours() * 60 * 60 * 1000; }
+function timeoutHours() { return Math.max(1, Number(config.mentionTimeoutHours) || 3); }
+function timeoutMs() { return timeoutHours() * 60 * 60 * 1000; }
 
 function warningEmbed(remaining) {
   return new EmbedBuilder()
@@ -17,7 +18,7 @@ function warningEmbed(remaining) {
     .setTitle('⚠️ تحذير: لا تمنشن البوت مباشرة')
     .setDescription(
       'هذا تحذيرك الأول. استخدم زر التذاكر أو الأوامر بدال المنشن.\n' +
-        `**المنشن الثاني خلال ${WINDOW_HOURS} ساعة = تايم أوت ${TIMEOUT_HOURS} ساعات.**`
+        `**المنشن الثاني خلال ${windowHours()} ساعة = تايم أوت ${timeoutHours()} ساعات.**`
     )
     .addFields({ name: 'التحذيرات عندك', value: `1 من 2`, inline: true })
     .setFooter({ text: `ينتهي التحذير بعد ${remaining} ساعة تقريباً` })
@@ -29,7 +30,7 @@ function timeoutEmbed() {
     .setColor('#ED4245')
     .setTitle('🔇 تم تطبيق التايم أوت')
     .setDescription(
-      `تم إعطاء تايم أوت **${TIMEOUT_HOURS} ساعات** بسبب منشن البوت مرتين.\n` +
+      `تم إعطاء تايم أوت **${timeoutHours()} ساعات** بسبب منشن البوت مرتين.\n` +
         'المرة الجاية استخدم زر التذاكر أو الأوامر بدون منشن.'
     )
     .setTimestamp();
@@ -46,7 +47,7 @@ async function handleMention(message, client) {
     const now = Date.now();
 
     let record = records.get(key);
-    if (!record || now - record.firstAt > WINDOW_MS) {
+    if (!record || now - record.firstAt > windowMs()) {
       record = { count: 0, firstAt: now };
     }
 
@@ -54,7 +55,7 @@ async function handleMention(message, client) {
     records.set(key, record);
 
     if (record.count === 1) {
-      const remaining = Math.max(1, Math.ceil((WINDOW_MS - (now - record.firstAt)) / 3600000));
+      const remaining = Math.max(1, Math.ceil((windowMs() - (now - record.firstAt)) / 3600000));
       await message
         .reply({
           embeds: [warningEmbed(remaining)],
@@ -90,7 +91,7 @@ async function handleMention(message, client) {
     try {
       const member = message.member || (await message.guild.members.fetch(message.author.id));
 
-      await member.timeout(TIMEOUT_MS, `منشن البوت مرتين (تحذير ثم تايم أوت ${TIMEOUT_HOURS} ساعات)`);
+      await member.timeout(timeoutMs(), `منشن البوت مرتين (تحذير ثم تايم أوت ${timeoutHours()} ساعات)`);
 
       records.delete(key);
 
