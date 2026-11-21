@@ -78,7 +78,19 @@ const commandData = [
   new SlashCommandBuilder()
     .setName('panel')
     .setDescription('إعادة إرسال لوحة التذاكر في نفس القناة')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+
+  new SlashCommandBuilder()
+    .setName('link')
+    .setDescription('ربط حساب ديسكوردك بلوحة التحكم')
+    .addStringOption((option) =>
+      option
+        .setName('code')
+        .setDescription('الكود اللي ظهر في الموقع')
+        .setMinLength(4)
+        .setMaxLength(16)
+        .setRequired(true)
+    )
 ].map((command) => command.toJSON());
 
 /* ------------------------------------------------------------------ */
@@ -262,12 +274,72 @@ async function renameCommand(interaction) {
   return reply(interaction, `✅ تم تغيير اسم التذكرة إلى **${name}**.`);
 }
 
+async function linkCommand(interaction) {
+  const isAdmin = !!interaction.member?.permissions?.has?.(PermissionFlagsBits.Administrator);
+  if (!isAdmin) return reply(interaction, '❌ أمر الربط للأدمن فقط في هذا السيرفر.');
+
+  const code = interaction.options.getString('code', true).trim().toUpperCase();
+  const guilds = [];
+
+  for (const guild of interaction.client.guilds.cache.values()) {
+    let admin = guild.ownerId === interaction.user.id;
+    if (!admin) {
+      const member = await guild.members.fetch(interaction.user.id).catch(() => null);
+      admin = !!member && member.permissions.has(PermissionFlagsBits.Administrator);
+    }
+    if (!admin) continue;
+    guilds.push({
+      id: guild.id,
+      name: guild.name,
+      icon: guild.iconURL({ size: 128 }) || null,
+      owner: guild.ownerId === interaction.user.id,
+      botPresent: true,
+      memberCount: guild.memberCount
+    });
+  }
+
+  const base = String(process.env.DASHBOARD_URL || '').trim().replace(/\/+$/, '');
+  if (!base) return reply(interaction, '❌ الموقع غير مربوط بالبوت.');
+
+  try {
+    const res = await fetch(`${base}/api/link/complete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-log-token': String(process.env.DASHBOARD_LOG_TOKEN || '').trim()
+      },
+      body: JSON.stringify({
+        code,
+        userId: interaction.user.id,
+        username: interaction.user.globalName || interaction.user.username,
+        avatar: interaction.user.displayAvatarURL({ size: 128 }),
+        guilds
+      }),
+      signal: AbortSignal.timeout(10000)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+    const lines = guilds.map((g) => `• **${g.name}** — \`${g.id}\``).join('\n') || 'لا يوجد';
+    return reply(
+      interaction,
+      `✅ تم ربط حسابك — عندك ${guilds.length} سيرفر تقدر تديره.\n\n${lines}\n\nارجع للموقع واختار السيرفر.`
+    );
+  } catch (err) {
+    console.error('[link]', err.message);
+    return reply(interaction, `❌ فشل الربط: ${err.message}`);
+  }
+}
+
 async function handleCommand(interaction) {
+  if (interaction.commandName === 'link') return linkCommand(interaction);
   if (!interaction.inGuild()) {
     return reply(interaction, '❌ الأوامر تشتغل داخل السيرفر فقط.');
   }
 
   switch (interaction.commandName) {
+    case 'link':
+      return linkCommand(interaction);
     case 'setup':
       return setup(interaction);
     case 'banner':
