@@ -2,7 +2,7 @@
 
 الملفات جاهزة لكل الاستضافات المشهورة. **المهم: ما ترفع ملف `.env` أبداً** — التوكن يتحط كـ Environment Variables في لوحة الاستضافة.
 
-> بسبب إن جهازك ما فيه Git/Docker ولا CLI لاستضافة، ما أقدر أدخل حسابك من هنا. اختر استضافة من تحت واتبع الخطوات، أو أعطيني بيانات الدخول/ VPS وأسويها عنك.
+> ✅ **البوت منشور فعلياً على Render (مجاني بدون بطاقة) وهو شغال 24/7.** التفاصيل تحت.
 
 ---
 
@@ -17,32 +17,32 @@
 
 ---
 
-## ٠) تم بالفعل: تشغيل تلقائي على جهازك (مجاني 100%)
+## ٠) النشر الحالي (تم تنفيذه ✅)
 
-- أُنشئت مهمة **Discord Ticket Bot** في **Task Scheduler** تشتغل عند كل إقلاع للويندوز بحساب `SYSTEM` (قبل أي دخول، وبونافذة).
-- ملف `run-forever.bat` يعيد تشغيل البوت تلقائياً خلال ٥ ثواني إذا انقطع (اختبرناه 👍).
-- عطّلنا النوم/السبات عند توصيل الكهرباء (`powercfg`) عشان البوت ما يوقف.
-- البوت الحين متصل بـ gateway ديسكورد (تحقق من الاتصال).
-- **الحد الوحيد:** إذا الجهاز مطفي أو الانترنت مقطوع، البوت يوقف. عشان 24/7 حقيقي بغض النظر عن جهازك، لازم سحابة (الخيارات تحت).
+| العنصر | القيمة |
+|---|---|
+| الاستضافة | **Render** — Web Service، خطة `free`، منطقة **virginia** |
+| الرابط | https://discord-ticket-bot-v2-3uzx.onrender.com |
+| لوحة التحكم | https://dashboard.render.com/web/srv-dc0qicuc6qcc73f5m0tg |
+| GitHub | https://github.com/D7r968/discord-ticket-bot |
+| Build / Start | `npm ci --omit=dev` / `node index.js` |
+| المتغيرات | `DISCORD_TOKEN` + `NODE_ENV=production` (بدون رفع `.env`) |
+| حالة الدخول | `bot:"Ticket 971#1742"`، `login:"logged_in"`، `ws:"open"` |
 
-إلغاء التشغيل التلقائي (كأدمن): `schtasks /delete /tn "Discord Ticket Bot" /f`
+**ملاحظة مهمة عن المنطقة:** منطقة `oregon` كانت ترجع `429` من `discord.com/api/v10/gateway/bot` فكان الدخول يعلّق. نقلنا الخدمة لـ `virginia` واشتغل من أول مرة. لا ترجّعها لأوريغون.
 
----
+تم كمان:
+- حذف خدمة Oregon القديمة (`srv-dc0qct61egvs738o7co0`) عشان ما يصير فيه نسختين.
+- **إيقاف التشغيل التلقائي المحلي**: حُذفت مهمة `Discord Ticket Bot` من Task Scheduler وquery killed للعملية المحلية — البوت الآن نسخة واحدة بس (السحابة).
 
-## ١) Render (أسهل، مجاني)
+### ⚠️ البينغ كل ٥ دقائق (مطلوب عشان ما يرقد)
+الخطة المجانية في Render ترقد بعد ١٥ دقيقة بدون زيارة. الملف `.github/workflows/keep-alive.yml` جاهز محلياً ويرسل طلب GET كل ٥ دقائق للرابط أعلاه.
+رفعه لمحتاج توكن GitHub بصلاحية `workflow` إضافية (التوكن الحالي عنده `repo` بس)، أو بداله سجّل monitor مجاني في https://uptimerobot.com على نفس الرابط كل ٥ دقائق.
 
-1. افتح https://github.com وسوي **New repository** (خاص أو عام) وسمّيه `discord-ticket-bot`.
-2. ارفع كل ملفات المشروع **عدا** `.env` و `node_modules` و `data.json` و `transcripts`.
-   - أسرع طريقة: استخرج `discord-ticket-bot-deploy.zip` الموجود على سطح المكتب واسحب الملفات للـ repo.
-3. في Render: **New → Web Service** → اربط الـ repo.
-   - ملف `render.yaml` موجود فبيتعرف عليه تلقائياً.
-   - أو أدخل يدوياً: `Build Command: npm ci --omit=dev` / `Start Command: node index.js`.
-4. في **Environment** أضف `DISCORD_TOKEN` و `CLIENT_ID` و `GUILD_ID`.
-5. **Create Web Service** → بيشتغل البوت.
-
-⚠️ الخطة المجانية في Render بترقد بعد 15 دقيقة بدون زيارة. عشان يبقى شغال:
-- سجّل في https://uptimerobot.com وضيف Monitor من نوع HTTP/HTTPS على رابط البوت، وخلّي الفحص كل 5 دقائق (الصفحة `/` ترجع `{"status":"ok"}`)، **أو**
-- استخدم Background Worker مدفوع / خطة Starter.
+فحص الحالة اليدوي:
+```powershell
+Invoke-RestMethod https://discord-ticket-bot-v2-3uzx.onrender.com/
+```
 
 ---
 
