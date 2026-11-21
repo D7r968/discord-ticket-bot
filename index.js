@@ -1,194 +1,161 @@
-const { Client, GatewayIntentBits, Partials, Collection, EmbedBuilder, PermissionFlagsBits, AuditLogEvent } = require('discord.js');
-const fs = require('fs');
+'use strict';
+
+require('dotenv').config();
+
 const http = require('http');
-const config = require('./config.json');
-const chalk = require('chalk');
+const { Client, GatewayIntentBits, Events, MessageFlags } = require('discord.js');
+const config = require('./config');
+const store = require('./store');
+const { commandData, handleCommand } = require('./commands');
+const { handleButton, handleSelect } = require('./tickets');
+const { handleMention } = require('./mentions');
+const { describeBanner } = require('./banner');
+
+const token = String(process.env.DISCORD_TOKEN || '').trim();
+
+// حالة التسجيل عشان نعرف من الـ health لو اللوجات ما ظهرت
+let loginStatus = 'starting';
+let loginDetail = '';
+let egressStatus = 'untested';
+let wsStatus = 'untested';
+let gatewayBotStatus = 'untested';
+
+// فحص سريع للاتصال الخارجي (يساعد في تشخيص الاستضافات)
+(async () => {
+  try {
+    const res = await fetch('https://discord.com/api/v10/gateway', {
+      signal: AbortSignal.timeout(10000)
+    });
+    egressStatus = `http_${res.status}`;
+    console.log(`[i] اتصال discord.com: ${egressStatus}`);
+  } catch (err) {
+    egressStatus = `failed: ${err.message}`;
+    console.error(`[!] اتصال discord.com فشل: ${err.message}`);
+  }
+})();
+
+// فحص منفصل لاتصال WebSocket بالـ Gateway (نقطة تعليق discord.js)
+(async () => {
+  try {
+    const ws = new WebSocket('wss://gateway.discord.gg/?v=10&encoding=json');
+    const timer = setTimeout(() => {
+      wsStatus = 'timeout';
+      try { ws.close(); } catch { /* ignore */ }
+    }, 12000);
+    ws.onopen = () => {
+      wsStatus = 'open';
+      clearTimeout(timer);
+      console.log('[i] WebSocket gateway: open');
+      try { ws.close(); } catch { /* ignore */ }
+    };
+    ws.onerror = () => {
+      wsStatus = 'error';
+      clearTimeout(timer);
+      console.error('[!] WebSocket gateway: error');
+    };
+  } catch (err) {
+    wsStatus = `exception: ${err.message}`;
+    console.error(`[!] WebSocket gateway exception: ${err.message}`);
+  }
+})();
+
+// فحص نقطة /gateway/bot بالتوكن (اللي يستخدمه discord.js قبل فتح الوصلة)
+(async () => {
+  try {
+    const res = await fetch('https://discord.com/api/v10/gateway/bot', {
+      headers: { Authorization: `Bot ${token}` },
+      signal: AbortSignal.timeout(10000)
+    });
+    const text = await res.text();
+    gatewayBotStatus = `http_${res.status} len=${text.length}`;
+    if (res.status === 429) {
+      try {
+        const j = JSON.parse(text);
+        gatewayBotStatus += ` retry_after=${j.retry_after} global=${j.global}`;
+      } catch { /* ignore */ }
+    }
+    console.log(`[i] gateway/bot: ${gatewayBotStatus}`);
+  } catch (err) {
+    gatewayBotStatus = `failed: ${err.message}`;
+    console.error(`[!] gateway/bot فشل: ${err.message}`);
+  }
+})();
+
+const TOKEN_PLACEHOLDERS = ['', 'ضع_التوكن_هنا', 'YOUR_TOKEN', 'TOKEN'];
+
+if (TOKEN_PLACEHOLDERS.includes(token)) {
+  console.error(
+    '\n[!] ما فيه توكن للبوت.\n' +
+      '    1) افتح ملف .env\n' +
+      '    2) حط التوكن في DISCORD_TOKEN=\n' +
+      '    3) شغّل start.bat مرة ثانية\n'
+  );
+  process.exit(1);
+}
 
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildBans,
-        GatewayIntentBits.GuildEmojisAndStickers,
-        GatewayIntentBits.GuildIntegrations,
-        GatewayIntentBits.GuildWebhooks,
-        GatewayIntentBits.GuildInvites,
-        GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.MessageContent,
-    ],
-    partials: [Partials.Message, Partials.Channel, Partials.Reaction]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
 });
 
-client.commands = new Collection();
-client.cooldowns = new Collection();
+client.on(Events.Debug, (msg) => console.log('[debug]', msg));
 
-// تحميل قاعدة البيانات
-let db = {
-    backup: {
-        roles: [],
-        channels: [],
-        members: [],
-        settings: {}
-    },
-    whitelist: config.whitelist || [],
-    permanentRoles: config.permanentRoles || [],
-    trustedUsers: {},
-    antiRaid: {
-        joins: []
-    }
-};
+client.once(Events.ClientReady, async (c) => {
+  console.log('====================================');
+  console.log(`[✓] تم تسجيل الدخول: ${c.user.tag}`);
+  console.log(`[i] السيرفرات: ${c.guilds.cache.size}`);
+  console.log(`[i] الصورة: ${describeBanner()}`);
 
-// حفظ قاعدة البيانات
-function saveDB() {
-    fs.writeFileSync('./database.json', JSON.stringify(db, null, 2));
-}
+  const guildId = String(process.env.GUILD_ID || '').trim();
+  const guild = guildId ? c.guilds.cache.get(guildId) : null;
 
-// تحميل قاعدة البيانات
-if (fs.existsSync('./database.json')) {
-    db = JSON.parse(fs.readFileSync('./database.json', 'utf8'));
-}
-
-// تحميل الأوامر
-const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
-for (const file of commandFiles) {
-    const command = require(`./commands/${file}`);
-    client.commands.set(command.name, command);
-}
-
-// تحميل الأحداث
-const eventFiles = fs.readdirSync('./events').filter(file => file.endsWith('.js'));
-for (const file of eventFiles) {
-    const event = require(`./events/${file}`);
-    if (event.once) {
-        client.once(event.name, (...args) => event.execute(...args, client, db, saveDB));
+  try {
+    if (guild) {
+      await guild.commands.set(commandData);
+      console.log(`[✓] تم تسجيل الأوامر في: ${guild.name}`);
     } else {
-        client.on(event.name, (...args) => event.execute(...args, client, db, saveDB));
+      await c.application.commands.set(commandData);
+      console.log('[✓] تم تسجيل الأوامر عالمياً (تحتاج دقائق عشان تظهر)');
     }
-}
+  } catch (err) {
+    console.error('[!] فشل تسجيل الأوامر:', err.message);
+  }
 
-// معالجة الأوامر
-client.on('messageCreate', async message => {
-    if (!message.content.startsWith(config.prefix) || message.author.bot) return;
+  // تنظيف التذاكر اللي انحذفت قنواتها
+  for (const channelId of Object.keys(store.allTickets())) {
+    const exists = c.channels.cache.has(channelId);
+    if (!exists) store.removeTicket(channelId);
+  }
 
-    const args = message.content.slice(config.prefix.length).trim().split(/ +/);
-    const commandName = args.shift().toLowerCase();
-
-    const command = client.commands.get(commandName) || 
-                   client.commands.find(cmd => cmd.aliases && cmd.aliases.includes(commandName));
-
-    if (!command) return;
-
-    // التحقق من الصلاحيات
-    if (command.ownerOnly && message.author.id !== config.ownerId) {
-        return message.reply('❌ هذا الأمر متاح فقط لمالك البوت!');
-    }
-
-    if (command.permissions && !message.member.permissions.has(command.permissions)) {
-        return message.reply('❌ ليس لديك الصلاحيات الكافية لاستخدام هذا الأمر!');
-    }
-
-    // نظام الكولداون
-    if (!client.cooldowns.has(command.name)) {
-        client.cooldowns.set(command.name, new Collection());
-    }
-
-    const now = Date.now();
-    const timestamps = client.cooldowns.get(command.name);
-    const cooldownAmount = (command.cooldown || 3) * 1000;
-
-    if (timestamps.has(message.author.id)) {
-        const expirationTime = timestamps.get(message.author.id) + cooldownAmount;
-
-        if (now < expirationTime) {
-            const timeLeft = (expirationTime - now) / 1000;
-            return message.reply(`⏱️ الرجاء الانتظار ${timeLeft.toFixed(1)} ثانية قبل استخدام الأمر مرة أخرى.`);
-        }
-    }
-
-    timestamps.set(message.author.id, now);
-    setTimeout(() => timestamps.delete(message.author.id), cooldownAmount);
-
-    // تنفيذ الأمر
-    try {
-        await command.execute(message, args, client, db, saveDB);
-    } catch (error) {
-        console.error(error);
-        message.reply('❌ حدث خطأ أثناء تنفيذ الأمر!');
-    }
+  console.log(`[i] التذاكر المفتوحة: ${Object.keys(store.allTickets()).length}`);
+  console.log('====================================');
 });
 
-// دالة إرسال اللوقات
-client.sendLog = async (embed) => {
+client.on(Events.InteractionCreate, async (interaction) => {
+  try {
+    if (interaction.isChatInputCommand()) return await handleCommand(interaction);
+    if (interaction.isButton()) return await handleButton(interaction);
+    if (interaction.isStringSelectMenu()) return await handleSelect(interaction);
+  } catch (err) {
+    console.error('[!] خطأ في التفاعل:', err);
+
+    const payload = {
+      content: '❌ صار خطأ غير متوقع. جرّب مرة ثانية أو راسل الإدارة.',
+      flags: MessageFlags.Ephemeral
+    };
+
     try {
-        const logChannel = client.channels.cache.get(config.logChannelId);
-        if (logChannel) {
-            await logChannel.send({ embeds: [embed] });
-        }
-    } catch (error) {
-        console.error('خطأ في إرسال اللوق:', error);
+      if (interaction.deferred || interaction.replied) await interaction.followUp(payload);
+      else await interaction.reply(payload);
+    } catch {
+      /* تجاهل */
     }
-};
+  }
+});
 
-// دالة التحقق من الوايت لست
-client.isWhitelisted = (userId) => {
-    return userId === config.ownerId || db.whitelist.includes(userId);
-};
+// أي منشن للبوت: تحذير أول، ثم تايم أوت 3 ساعات في المرة الثانية
+client.on(Events.MessageCreate, (message) => handleMention(message, client));
 
-// دالة حفظ نسخة احتياطية تلقائية
-function autoBackup() {
-    if (!config.backupEnabled) return;
-    
-    setInterval(async () => {
-        const guild = client.guilds.cache.get(config.guildId);
-        if (!guild) return;
-
-        console.log(chalk.blue('[نظام النسخ الاحتياطي] جاري حفظ نسخة احتياطية...'));
-        
-        // حفظ الرولات
-        db.backup.roles = guild.roles.cache.map(role => ({
-            id: role.id,
-            name: role.name,
-            color: role.color,
-            permissions: role.permissions.bitfield.toString(),
-            position: role.position,
-            hoist: role.hoist,
-            mentionable: role.mentionable
-        }));
-
-        // حفظ الرومات
-        db.backup.channels = guild.channels.cache.map(channel => ({
-            id: channel.id,
-            name: channel.name,
-            type: channel.type,
-            position: channel.position,
-            parentId: channel.parentId,
-            permissionOverwrites: channel.permissionOverwrites.cache.map(po => ({
-                id: po.id,
-                type: po.type,
-                allow: po.allow.bitfield.toString(),
-                deny: po.deny.bitfield.toString()
-            }))
-        }));
-
-        // حفظ الأعضاء
-        db.backup.members = guild.members.cache.map(member => ({
-            id: member.id,
-            username: member.user.username,
-            roles: member.roles.cache.map(r => r.id),
-            joinedAt: member.joinedAt
-        }));
-
-        saveDB();
-        console.log(chalk.green('[نظام النسخ الاحتياطي] تم الحفظ بنجاح ✅'));
-    }, config.autoBackupInterval);
-}
-
-
-// سيرفر فحص للاستضافة (Render يرسل PORT تلقائياً)
-let loginState = 'starting';
-let loginError = '';
+// سيرفر صغير عشان الاستضافات اللي تطلب منفذ HTTP (Render / Railway / Koyeb ...)
 if (process.env.PORT) {
   const port = Number(process.env.PORT) || 3000;
   http
@@ -198,16 +165,19 @@ if (process.env.PORT) {
         JSON.stringify({
           status: 'ok',
           bot: client.user?.tag || 'starting',
-          login: loginState,
-          loginError,
+          login: loginStatus,
+          loginDetail,
+          egress: egressStatus,
+          ws: wsStatus,
+          gatewayBot: gatewayBotStatus,
           uptimeSeconds: Math.floor(process.uptime())
         })
       );
     })
-    .listen(port, '0.0.0.0', () => console.log('[i] منفذ الفحص شغال على ' + port));
+    .listen(port, '0.0.0.0', () => console.log(`[i] منفذ الفحص شغال على ${port}`));
 }
 
-// self-ping داخلي كل 5 دقائق عشان Render ما يرقد
+// self-ping: طلب داخلي كل 5 دقائق عشان Render ما يرقد بعد 15 دقيقة سكون
 const selfPingUrl = String(process.env.SELF_PING_URL || '').trim();
 if (selfPingUrl) {
   setInterval(async () => {
@@ -217,41 +187,43 @@ if (selfPingUrl) {
       console.error('[!] فشل الـ self ping:', err.message);
     }
   }, 5 * 60 * 1000).unref();
-  console.log('[i] self ping مفعّل كل 5 دقائق: ' + selfPingUrl);
+  console.log(`[i] self ping مفعّل كل 5 دقائق: ${selfPingUrl}`);
 }
 
 process.on('SIGTERM', () => {
-  console.log('[i] SIGTERM — إغلاق آمن...');
+  console.log('[i] استلام SIGTERM — إغلاق البوت بأمان...');
   client.destroy();
   process.exit(0);
 });
 
-// تسجيل الدخول
-const botToken = String(process.env.DISCORD_TOKEN || config.token || '').trim();
-if (!botToken || botToken.includes('ضع_')) {
-  console.error('[!] ما فيه توكن — حط DISCORD_TOKEN في المتغيرات');
-  process.exit(1);
-}
+client.on(Events.Error, (err) => console.error('[!] خطأ العميل:', err));
+client.on(Events.Warn, (msg) => console.warn('[!] تحذير:', msg));
 
-client.login(botToken)
+process.on('unhandledRejection', (err) => console.error('[!] unhandledRejection:', err));
+process.on('uncaughtException', (err) => console.error('[!] uncaughtException:', err));
+
+loginStatus = 'logging_in';
+console.log('[i] جاري تسجيل الدخول إلى Discord...');
+
+client
+  .login(token)
   .then(() => {
-    loginState = 'logged_in';
-    autoBackup();
+    loginStatus = 'logged_in';
+    console.log('[✓] تم استلام وعد تسجيل الدخول بنجاح');
   })
-  .catch(error => {
-    loginState = 'failed';
-    loginError = String(error?.message || error);
-    console.error(chalk.red('خطأ في تسجيل الدخول:'), error);
-    process.exit(1);
+  .catch((err) => {
+    loginStatus = 'failed';
+    loginDetail = String(err?.message || err);
+    console.error('[!] فشل تسجيل الدخول:', err);
   });
 
-// معالجة الأخطاء
-process.on('unhandledRejection', error => {
-    console.error(chalk.red('خطأ غير معالج:'), error);
-});
-
-process.on('uncaughtException', error => {
-    console.error(chalk.red('استثناء غير معالج:'), error);
-});
-
-module.exports = client;
+// إذا ما أكتمل الدخول خلال 45 ثانية، نطبع سبب محتمل عشان التشخيص
+setTimeout(() => {
+  if (loginStatus !== 'logged_in') {
+    console.error(`[!] الدخول ما اكتمل بعد 45 ثانية — الحالة: ${loginStatus} ${loginDetail}`);
+    if (loginStatus === 'logging_in') {
+      loginStatus = 'timeout';
+      loginDetail = 'client.login did not settle within 45s';
+    }
+  }
+}, 45000).unref();
