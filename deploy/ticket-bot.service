@@ -1,0 +1,19 @@
+[Unit]
+Description=Discord Ticket Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ROOT_USER
+WorkingDirectory=/opt/discord-ticket-bot
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=DISCORD_TOKEN=PUT_TOKEN_HERE
+Environment=CLIENT_ID=PUT_CLIENT_ID_HERE
+Environment=GUILD_ID=PUT_GUILD_ID_HERE
+
+[Install]
+WantedBy=multi-user.target
