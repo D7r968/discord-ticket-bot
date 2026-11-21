@@ -17,6 +17,7 @@ const token = String(process.env.DISCORD_TOKEN || '').trim();
 let loginStatus = 'starting';
 let loginDetail = '';
 let egressStatus = 'untested';
+let wsStatus = 'untested';
 
 // فحص سريع للاتصال الخارجي (يساعد في تشخيص الاستضافات)
 (async () => {
@@ -29,6 +30,31 @@ let egressStatus = 'untested';
   } catch (err) {
     egressStatus = `failed: ${err.message}`;
     console.error(`[!] اتصال discord.com فشل: ${err.message}`);
+  }
+})();
+
+// فحص منفصل لاتصال WebSocket بالـ Gateway (نقطة تعليق discord.js)
+(async () => {
+  try {
+    const ws = new WebSocket('wss://gateway.discord.gg/?v=10&encoding=json');
+    const timer = setTimeout(() => {
+      wsStatus = 'timeout';
+      try { ws.close(); } catch { /* ignore */ }
+    }, 12000);
+    ws.onopen = () => {
+      wsStatus = 'open';
+      clearTimeout(timer);
+      console.log('[i] WebSocket gateway: open');
+      try { ws.close(); } catch { /* ignore */ }
+    };
+    ws.onerror = () => {
+      wsStatus = 'error';
+      clearTimeout(timer);
+      console.error('[!] WebSocket gateway: error');
+    };
+  } catch (err) {
+    wsStatus = `exception: ${err.message}`;
+    console.error(`[!] WebSocket gateway exception: ${err.message}`);
   }
 })();
 
@@ -117,6 +143,7 @@ if (process.env.PORT) {
           login: loginStatus,
           loginDetail,
           egress: egressStatus,
+          ws: wsStatus,
           uptimeSeconds: Math.floor(process.uptime())
         })
       );
