@@ -1,0 +1,20 @@
+services:
+  # استخدم type: worker إذا حسابك يدعم العمال — الأفضل للبوتات
+  - type: web
+    name: discord-ticket-bot
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: CLIENT_ID
+        sync: false
+      - key: GUILD_ID
+        sync: false
+      - key: PORT
+        value: "3000"
+      - key: NODE_ENV
+        value: production
