@@ -1,0 +1,20 @@
+{
+  "supportRoleId": "",
+  "categoryId": "",
+  "logChannelId": "",
+  "ticketLimit": 1,
+  "color": "#5865F2",
+
+  "panelTitle": "🎫 الدعم الفني",
+  "panelDescription": "اضغط على الزر بالأسفل عشان تفتح تذكرة،\nوبيرد عليك فريق الدعم في أقرب وقت ممكن.",
+  "panelButtonLabel": "افتح تذكرة",
+
+  "ticketWelcomeTitle": "🎫 تذكرتك جاهزة",
+  "ticketWelcomeDescription": "اكتب تفاصيلك هنا، وأرفق أي صور أو ملفات تساعدنا نفهم طلبك.\nفريق الدعم بيوصلك قريب إن شاء الله.",
+
+  "mentionWarnHours": 24,
+  "mentionTimeoutHours": 3,
+  "mentionTimeoutEnabled": true,
+
+  "bannerFile": ""
+}
