@@ -1,0 +1,8 @@
+=== admin autostart setup ===
+DIR=C:\Users\aaaag\OneDrive\Desktop\ادوات\discord-ticket-bot
+SUCCESS: The scheduled task "Discord Ticket Bot" has successfully been created.
+create-exit=0
+SUCCESS: Attempted to run the scheduled task "Discord Ticket Bot".
+run-exit=0
+startup-shortcut-removed
+powercfg-done
