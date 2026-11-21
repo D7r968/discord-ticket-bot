@@ -13,7 +13,8 @@
 - **البوت:** `Ticket 971#1742` — متصل بـ Discord gateway.
 - التشغيل التلقائي المحلي (Task Scheduler على جهازك) **تم إيقافه** عشان ما يصير فيه نسختين.
 
-> ✅ باينغ تلقائي من GitHub Actions (`Keep bot awake`) كل ٥ دقائق عشان الخدمة المجانية ما ترقد — راجع `DEPLOY.md`.
+> ✅ باينغ تلقائي (self-ping + GitHub Actions) عشان الخدمة المجانية ما ترقد — راجع `DEPLOY.md`.
+> 🛡️ بوت الحماية الثاني (`Abuabdulaziz Security`) منشور كمان على Render: https://abuabdulaziz-security-bot.onrender.com
 
 ---
 
