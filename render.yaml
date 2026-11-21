@@ -4,7 +4,8 @@ services:
     name: discord-ticket-bot
     runtime: docker
     plan: free
-    region: frankfurt
+    # Virginia هو اللي يشتغل مع Discord gateway — Oregon يرجع 429
+    region: virginia
     dockerfilePath: ./Dockerfile
     healthCheckPath: /
     envVars:
