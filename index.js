@@ -18,6 +18,7 @@ let loginStatus = 'starting';
 let loginDetail = '';
 let egressStatus = 'untested';
 let wsStatus = 'untested';
+let gatewayBotStatus = 'untested';
 
 // فحص سريع للاتصال الخارجي (يساعد في تشخيص الاستضافات)
 (async () => {
@@ -58,6 +59,28 @@ let wsStatus = 'untested';
   }
 })();
 
+// فحص نقطة /gateway/bot بالتوكن (اللي يستخدمه discord.js قبل فتح الوصلة)
+(async () => {
+  try {
+    const res = await fetch('https://discord.com/api/v10/gateway/bot', {
+      headers: { Authorization: `Bot ${token}` },
+      signal: AbortSignal.timeout(10000)
+    });
+    const text = await res.text();
+    gatewayBotStatus = `http_${res.status} len=${text.length}`;
+    if (res.status === 429) {
+      try {
+        const j = JSON.parse(text);
+        gatewayBotStatus += ` retry_after=${j.retry_after} global=${j.global}`;
+      } catch { /* ignore */ }
+    }
+    console.log(`[i] gateway/bot: ${gatewayBotStatus}`);
+  } catch (err) {
+    gatewayBotStatus = `failed: ${err.message}`;
+    console.error(`[!] gateway/bot فشل: ${err.message}`);
+  }
+})();
+
 const TOKEN_PLACEHOLDERS = ['', 'ضع_التوكن_هنا', 'YOUR_TOKEN', 'TOKEN'];
 
 if (TOKEN_PLACEHOLDERS.includes(token)) {
@@ -73,6 +96,8 @@ if (TOKEN_PLACEHOLDERS.includes(token)) {
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
 });
+
+client.on(Events.Debug, (msg) => console.log('[debug]', msg));
 
 client.once(Events.ClientReady, async (c) => {
   console.log('====================================');
@@ -144,6 +169,7 @@ if (process.env.PORT) {
           loginDetail,
           egress: egressStatus,
           ws: wsStatus,
+          gatewayBot: gatewayBotStatus,
           uptimeSeconds: Math.floor(process.uptime())
         })
       );
