@@ -3,7 +3,7 @@
 require('dotenv').config();
 
 const http = require('http');
-const { Client, GatewayIntentBits, Events, MessageFlags } = require('discord.js');
+const { Client, GatewayIntentBits, Events, MessageFlags, PermissionFlagsBits } = require('discord.js');
 const config = require('./config');
 const store = require('./store');
 const { commandData, handleCommand } = require('./commands');
@@ -155,11 +155,41 @@ client.on(Events.InteractionCreate, async (interaction) => {
 // أي منشن للبوت: تحذير أول، ثم تايم أوت 3 ساعات في المرة الثانية
 client.on(Events.MessageCreate, (message) => handleMention(message, client));
 
-// سيرفر صغير عشان الاستضافات اللي تطلب منفذ HTTP (Render / Railway / Koyeb ...)
+// سيرفر صغير: فحص صحة + قائمة سيرفرات الأدمن للوحة التحكم
 if (process.env.PORT) {
   const port = Number(process.env.PORT) || 3000;
+  const CONTROL_TOKEN = String(process.env.DASHBOARD_LOG_TOKEN || 'change-me');
   http
-    .createServer((req, res) => {
+    .createServer(async (req, res) => {
+      const url = new URL(req.url || '/', 'http://localhost');
+      if (url.pathname === '/control/guilds') {
+        if (String(req.headers['x-control-token'] || '') !== CONTROL_TOKEN) {
+          res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ ok: false, error: 'unauthorized' }));
+        }
+        const userId = String(url.searchParams.get('userId') || '').replace(/\D/g, '');
+        const guilds = [];
+        if (/^\d{15,25}$/.test(userId)) {
+          for (const guild of client.guilds.cache.values()) {
+            let admin = guild.ownerId === userId;
+            if (!admin) {
+              const member = await guild.members.fetch(userId).catch(() => null);
+              admin = !!member && member.permissions.has(PermissionFlagsBits.Administrator);
+            }
+            if (!admin) continue;
+            guilds.push({
+              id: guild.id,
+              name: guild.name,
+              icon: guild.iconURL({ size: 128 }) || null,
+              owner: guild.ownerId === userId,
+              botPresent: true,
+              memberCount: guild.memberCount
+            });
+          }
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ ok: true, guilds }));
+      }
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(
         JSON.stringify({
@@ -174,7 +204,7 @@ if (process.env.PORT) {
         })
       );
     })
-    .listen(port, '0.0.0.0', () => console.log(`[i] منفذ الفحص شغال على ${port}`));
+    .listen(port, '0.0.0.0', () => console.log(`[i] منفذ الفحص والتحكم شغال على ${port}`));
 }
 
 // self-ping: طلب داخلي كل 5 دقائق عشان Render ما يرقد بعد 15 دقيقة سكون
