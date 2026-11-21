@@ -177,6 +177,19 @@ if (process.env.PORT) {
     .listen(port, '0.0.0.0', () => console.log(`[i] منفذ الفحص شغال على ${port}`));
 }
 
+// self-ping: طلب داخلي كل 5 دقائق عشان Render ما يرقد بعد 15 دقيقة سكون
+const selfPingUrl = String(process.env.SELF_PING_URL || '').trim();
+if (selfPingUrl) {
+  setInterval(async () => {
+    try {
+      await fetch(selfPingUrl, { signal: AbortSignal.timeout(15000) });
+    } catch (err) {
+      console.error('[!] فشل الـ self ping:', err.message);
+    }
+  }, 5 * 60 * 1000).unref();
+  console.log(`[i] self ping مفعّل كل 5 دقائق: ${selfPingUrl}`);
+}
+
 process.on('SIGTERM', () => {
   console.log('[i] استلام SIGTERM — إغلاق البوت بأمان...');
   client.destroy();
