@@ -1,0 +1,10 @@
+node_modules
+.env
+data.json
+data.json.tmp
+transcripts
+*.log
+.git
+.gitignore
+start.bat
+deploy-package
