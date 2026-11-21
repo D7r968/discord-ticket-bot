@@ -190,6 +190,15 @@ if (selfPingUrl) {
   console.log(`[i] self ping مفعّل كل 5 دقائق: ${selfPingUrl}`);
 }
 
+// مزامنة إعدادات لوحة التحكم — التعديلات من الموقع تتنفّذ بدون إعادة نشر
+const dashboardSync = require('./dashboard-sync');
+dashboardSync.start('ticket', config, [
+  'supportRoleId', 'categoryId', 'logChannelId', 'ticketLimit', 'color',
+  'panelTitle', 'panelDescription', 'panelButtonLabel',
+  'ticketWelcomeTitle', 'ticketWelcomeDescription',
+  'mentionWarnHours', 'mentionTimeoutHours', 'mentionTimeoutEnabled'
+]);
+
 process.on('SIGTERM', () => {
   console.log('[i] استلام SIGTERM — إغلاق البوت بأمان...');
   client.destroy();
