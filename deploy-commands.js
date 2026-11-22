@@ -4,6 +4,8 @@ require('dotenv').config();
 
 const { REST, Routes } = require('discord.js');
 const { commandData } = require('./commands');
+const voiceCommandData = require('./voice-commands');
+const allCommandData = [...commandData, ...voiceCommandData];
 
 const token = String(process.env.DISCORD_TOKEN || '').trim();
 const clientId = String(process.env.CLIENT_ID || '').trim();
@@ -19,10 +21,10 @@ const rest = new REST({ version: '10' }).setToken(token);
 (async () => {
   try {
     if (guildId) {
-      await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commandData });
+      await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: allCommandData });
       console.log(`✅ تم تسجيل الأوامر في السيرفر ${guildId}`);
     } else {
-      await rest.put(Routes.applicationCommands(clientId), { body: commandData });
+      await rest.put(Routes.applicationCommands(clientId), { body: allCommandData });
       console.log('✅ تم تسجيل الأوامر عالمياً (تحتاج دقائق عشان تظهر)');
     }
   } catch (err) {
