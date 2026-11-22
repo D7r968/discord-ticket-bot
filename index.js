@@ -10,6 +10,7 @@ const { commandData, handleCommand } = require('./commands');
 const { handleButton, handleSelect } = require('./tickets');
 const { handleMention } = require('./mentions');
 const { describeBanner } = require('./banner');
+const attachVoice = require('./voice');
 
 const token = String(process.env.DISCORD_TOKEN || '').trim();
 
@@ -94,8 +95,16 @@ if (TOKEN_PLACEHOLDERS.includes(token)) {
 }
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates]
 });
+
+// أوامر الروم الصوتي (/join /leave /status) — نفس سلوك بوت الترحيب
+const voice = attachVoice(client, {
+  ghRepo: 'discord-ticket-bot',
+  log: (...a) => console.log(...a),
+  warn: (...a) => console.warn(...a)
+});
+const allCommandData = [...commandData, ...voice.commands()];
 
 client.on(Events.Debug, (msg) => console.log('[debug]', msg));
 
@@ -108,13 +117,22 @@ client.once(Events.ClientReady, async (c) => {
   const guildId = String(process.env.GUILD_ID || '').trim();
   const guild = guildId ? c.guilds.cache.get(guildId) : null;
 
+  // استرجاع الروم المحفوظ قبل أي شي
+  await voice.restore();
+
   try {
     if (guild) {
-      await guild.commands.set(commandData);
+      await guild.commands.set(allCommandData);
       console.log(`[✓] تم تسجيل الأوامر في: ${guild.name}`);
     } else {
-      await c.application.commands.set(commandData);
+      await c.application.commands.set(allCommandData);
       console.log('[✓] تم تسجيل الأوامر عالمياً (تحتاج دقائق عشان تظهر)');
+    }
+    // تسجيل فوري في كل سيرفرات البوت عشان الأوامر تظهر مباشرة
+    for (const g of c.guilds.cache.values()) {
+      try {
+        await g.commands.set(allCommandData);
+      } catch { /* تجاهل سيرفر واحد */ }
     }
   } catch (err) {
     console.error('[!] فشل تسجيل الأوامر:', err.message);
@@ -132,6 +150,7 @@ client.once(Events.ClientReady, async (c) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    if (await voice.handle(interaction)) return;
     if (interaction.isChatInputCommand()) return await handleCommand(interaction);
     if (interaction.isButton()) return await handleButton(interaction);
     if (interaction.isStringSelectMenu()) return await handleSelect(interaction);
