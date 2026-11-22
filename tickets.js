@@ -92,6 +92,9 @@ async function showTicketMenu(interaction) {
 }
 
 async function handleSelect(interaction) {
+  if (interaction.customId === 'ticket:visibility') {
+    return applyVisibility(interaction, interaction.values[0]);
+  }
   if (interaction.customId !== 'ticket:type') return undefined;
 
   const type = getType(interaction.values[0]);
@@ -112,10 +115,14 @@ async function handleSelect(interaction) {
   return openTicket(interaction, interaction.values[0]);
 }
 
-function ticketControls(claimed) {
+function ticketControls(claimed, visibility) {
+  const mode = visibility === 'private' ? 'خاص' : visibility === 'public' ? 'عام' : '';
+  const label = claimed
+    ? `مستلمة${mode ? ` (${mode})` : ''}: ${claimed.username}`
+    : 'استلام (الإدارة فقط)';
   const claim = new ButtonBuilder()
     .setCustomId('ticket:claim')
-    .setLabel(claimed ? `مستلمة: ${claimed.username}` : 'استلام')
+    .setLabel(label.length > 80 ? `مستلمة: ${claimed.username}` : label)
     .setEmoji('🙋')
     .setStyle(ButtonStyle.Secondary)
     .setDisabled(Boolean(claimed));
@@ -127,6 +134,14 @@ function ticketControls(claimed) {
     .setStyle(ButtonStyle.Danger);
 
   return new ActionRowBuilder().addComponents(claim, close);
+}
+
+// الاستلام للإدارة فقط — صاحب التذكرة ما يقدر يستلم تذكرته حتى لو كان أدمن
+function isAdmin(interaction) {
+  const member = interaction.member;
+  if (!member) return false;
+  if (interaction.guild && interaction.guild.ownerId === interaction.user.id) return true;
+  return !!(member.permissions && member.permissions.has(P.Administrator));
 }
 
 function canManage(interaction, ticket) {
@@ -290,20 +305,120 @@ async function claimTicket(interaction) {
     return ephemeral(interaction, '❌ هذي القناة مو تذكرة مسجلة.');
   }
 
-  if (ticket.claimedBy) {
-    return ephemeral(interaction, `التذكرة مستلمة بالفعل بواسطة <@${ticket.claimedBy}>`);
+  // صاحب التذكرة ما يقدر يستلمها — الإدارة فقط
+  if (ticket.ownerId === interaction.user.id) {
+    return ephemeral(interaction, '❌ صاحب التذكرة ما يقدر يستلم تذكرته — الاستلام للإدارة فقط.');
   }
 
+  if (!isAdmin(interaction)) {
+    return ephemeral(interaction, '❌ الاستلام للإدارة فقط — لازم عندك صلاحية Administrator.');
+  }
+
+  if (ticket.claimedBy) {
+    return ephemeral(interaction, `التذكرة مستلمة بالفعل من <@${ticket.claimedBy}>`);
+  }
+
+  // نحجز الاستلام فوراً عشان ما يستلمها اثنين بنفس الوقت
   ticket.claimedBy = interaction.user.id;
+  ticket.visibility = 'pending';
   store.addTicket(interaction.channelId, ticket);
 
-  await interaction.update({
-    components: [ticketControls({ id: interaction.user.id, username: interaction.user.username })]
-  });
-
   await interaction
-    .followUp({ content: `🙋 تم استلام التذكرة بواسطة ${interaction.user}` })
+    .update({
+      components: [ticketControls({ id: interaction.user.id, username: interaction.user.username })]
+    })
     .catch(() => {});
+
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId('ticket:visibility')
+    .setPlaceholder('اختر ظهور التذكرة بعد الاستلام')
+    .addOptions(
+      new StringSelectMenuOptionBuilder()
+        .setLabel('خاص — أنا وصاحب التذكرة فقط')
+        .setValue('private')
+        .setDescription('ما يشوف التذكرة غيرك أنت وصاحبها')
+        .setEmoji('🔒'),
+      new StringSelectMenuOptionBuilder()
+        .setLabel('عام — الإدارة فقط')
+        .setValue('public')
+        .setDescription('الأدمنز فقط يشوفون التذكرة')
+        .setEmoji('👑')
+    );
+
+  return interaction.followUp({
+    content: '✅ تم الاستلام. اختر الآن طريقة ظهور التذكرة:',
+    components: [new ActionRowBuilder().addComponents(menu)],
+    flags: MessageFlags.Ephemeral
+  });
+}
+
+/* ضبط ظهور التذكرة بعد الاستلام: خاص = المستلم + صاحب التذكرة، عام = الأدمنز */
+async function applyVisibility(interaction, value) {
+  const ticket = store.getTicket(interaction.channelId);
+  const mode = value === 'public' ? 'public' : 'private';
+
+  if (!ticket) {
+    return interaction.update({ content: '❌ هذي القناة مو تذكرة مسجلة.', components: [] });
+  }
+  if (ticket.claimedBy !== interaction.user.id || !isAdmin(interaction)) {
+    return interaction.update({ content: '❌ ما عندك صلاحية تغيير ظهور هذي التذكرة.', components: [] });
+  }
+
+  const channel = interaction.channel;
+  const guild = interaction.guild;
+  const allow = [P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.AttachFiles, P.EmbedLinks];
+
+  const overwrites = [
+    { id: guild.roles.everyone.id, deny: [P.ViewChannel] },
+    { id: ticket.ownerId, allow },
+    { id: interaction.client.user.id, allow },
+    { id: interaction.user.id, allow }
+  ];
+
+  if (mode === 'public') {
+    // الإدارة فقط: كل رولة عندها Administrator + مالك السيرفر
+    for (const role of guild.roles.cache.values()) {
+      if (role.id === guild.id || role.managed) continue;
+      if (role.permissions.has(P.Administrator)) overwrites.push({ id: role.id, allow });
+    }
+    if (guild.ownerId && !overwrites.some((o) => o.id === guild.ownerId)) {
+      overwrites.push({ id: guild.ownerId, allow });
+    }
+  }
+
+  try {
+    await channel.permissionOverwrites.set(overwrites, `استلام التذكرة — وضع ${mode}`);
+  } catch (err) {
+    console.error('[!] فشل ضبط ظهور التذكرة:', err.message);
+    return interaction.update({
+      content: '❌ ما قدرت أضبط الظهور — تأكد إن رتبة البوت أعلى وفوقها صلاحية إدارة القنوات.',
+      components: []
+    });
+  }
+
+  ticket.visibility = mode;
+  store.addTicket(interaction.channelId, ticket);
+
+  const modeText = mode === 'private'
+    ? '🔒 خاص — ما يشوفها غير المستلم وصاحب التذكرة'
+    : '👑 عام — الإدارة فقط';
+  await interaction.update({ content: `✅ تم ضبط الظهور: ${modeText}`, components: [] });
+
+  // الإشعار داخل روم التذكرة نفسه، كما طلبت
+  await channel.send({
+    content: `🙋 تم استلام التذكرة من ${interaction.user} — ${modeText}`,
+    allowedMentions: { parse: [] }
+  }).catch(() => {});
+
+  // تحديث زر التحكم بالوضع المختار
+  const controlMessage = channel.messages.cache.find(
+    (m) => m.author.id === interaction.client.user.id && m.components?.length
+  );
+  if (controlMessage) {
+    await controlMessage
+      .edit({ components: [ticketControls({ id: ticket.claimedBy, username: interaction.user.username }, mode)] })
+      .catch(() => {});
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -519,6 +634,8 @@ module.exports = {
   handleSelect,
   openTicket,
   claimTicket,
+  applyVisibility,
+  isAdmin,
   askClose,
   confirmClose,
   handleButton,
