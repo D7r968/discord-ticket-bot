@@ -8,7 +8,6 @@ const config = require('./config');
 const store = require('./store');
 const { commandData, handleCommand } = require('./commands');
 const { handleButton, handleSelect } = require('./tickets');
-const { handleMention } = require('./mentions');
 const { describeBanner } = require('./banner');
 const attachVoice = require('./voice');
 
@@ -171,8 +170,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-// أي منشن للبوت: تحذير أول، ثم تايم أوت 3 ساعات في المرة الثانية
-client.on(Events.MessageCreate, (message) => handleMention(message, client));
+// نظام المنشن (التحذير/التايم أوت) معطّل — أي عضو يمنشن عادي بدون عقوبة.
 
 // سيرفر صغير: فحص صحة + قائمة سيرفرات الأدمن للوحة التحكم
 if (process.env.PORT) {
