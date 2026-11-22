@@ -329,6 +329,18 @@ async function claimTicket(interaction) {
     })
     .catch(() => {});
 
+  // نرسل الإشعار قبل أي تغيير صلاحيات عشان كل اللي يشوفون القناة يشوفونه
+  try {
+    const notice = await interaction.channel.send({
+      content: `🙋 تم استلام التذكرة من ${interaction.user}`,
+      allowedMentions: { parse: [] }
+    });
+    ticket.noticeMessageId = notice.id;
+    store.addTicket(interaction.channelId, ticket);
+  } catch (err) {
+    console.error('[!] فشل إرسال إشعار الاستلام:', err.message);
+  }
+
   const menu = new StringSelectMenuBuilder()
     .setCustomId('ticket:visibility')
     .setPlaceholder('اختر ظهور التذكرة بعد الاستلام')
@@ -384,6 +396,13 @@ async function applyVisibility(interaction, value) {
     if (guild.ownerId && !overwrites.some((o) => o.id === guild.ownerId)) {
       overwrites.push({ id: guild.ownerId, allow });
     }
+  } else {
+    // خاص: نمنع كل الرتب صراحةً عشان صلاحيات الكاتيجوري ما ترجّع تفتح القناة
+    // (السماح المباشر للمستلم وصاحب التذكرة والبوت يفوق منع الرتب)
+    for (const role of guild.roles.cache.values()) {
+      if (role.id === guild.id || role.id === guild.roles.everyone.id || role.managed) continue;
+      overwrites.push({ id: role.id, deny: [P.ViewChannel] });
+    }
   }
 
   try {
@@ -404,11 +423,23 @@ async function applyVisibility(interaction, value) {
     : '👑 عام — الإدارة فقط';
   await interaction.update({ content: `✅ تم ضبط الظهور: ${modeText}`, components: [] });
 
-  // الإشعار داخل روم التذكرة نفسه، كما طلبت
-  await channel.send({
-    content: `🙋 تم استلام التذكرة من ${interaction.user} — ${modeText}`,
-    allowedMentions: { parse: [] }
-  }).catch(() => {});
+  // نحدّث إشعار الاستلام اللي انرسل قبل تغيير الصلاحيات — عشان اللي يشوف القناة يشوف الوضع أيضاً
+  // (ما نرسل رسالة ثانية جديدة عشان ما يتكرر الإشعار)
+  const noticeText = `🙋 تم استلام التذكرة من ${interaction.user} — ${modeText}`;
+  let noticeUpdated = false;
+  if (ticket.noticeMessageId) {
+    try {
+      const notice = await channel.messages.fetch(ticket.noticeMessageId);
+      await notice.edit({ content: noticeText, allowedMentions: { parse: [] } });
+      noticeUpdated = true;
+    } catch (err) {
+      console.error('[!] فشل تعديل إشعار الاستلام:', err.message);
+    }
+  }
+  if (!noticeUpdated) {
+    // fallback: إذا الإشعار القديم انحذف أو ما نقدر نعدّله، نرسل واحد جديد داخل الروم
+    await channel.send({ content: noticeText, allowedMentions: { parse: [] } }).catch(() => {});
+  }
 
   // تحديث زر التحكم بالوضع المختار
   const controlMessage = channel.messages.cache.find(
