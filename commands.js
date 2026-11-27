@@ -91,7 +91,7 @@ const commandData = [
         .setMaxLength(16)
         .setRequired(true)
     )
-].map((command) => command.toJSON());
+].map((command) => command.setDefaultMemberPermissions(PermissionFlagsBits.Administrator).toJSON());
 
 /* ------------------------------------------------------------------ */
 /*  أدوات                                                              */
