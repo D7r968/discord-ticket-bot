@@ -149,6 +149,14 @@ client.once(Events.ClientReady, async (c) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    // كل أوامر / مقتصرة على الأدمن — الأعضاء يقدرون يفتحون تكت بالأزرار بس
+    if (interaction.isChatInputCommand()) {
+      const allowed = interaction.member?.permissions?.has?.(PermissionFlagsBits.Administrator) ||
+        interaction.user.id === interaction.guild?.ownerId;
+      if (!allowed) {
+        return interaction.reply({ content: '❌ أوامر البوت للأدمن فقط.', flags: MessageFlags.Ephemeral });
+      }
+    }
     if (await voice.handle(interaction)) return;
     if (interaction.isChatInputCommand()) return await handleCommand(interaction);
     if (interaction.isButton()) return await handleButton(interaction);
